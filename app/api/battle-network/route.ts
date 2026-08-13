@@ -82,12 +82,20 @@ export async function POST(request: Request) {
     const source = await battle(String(body.sourceId));
     if (["claim-battle", "external-claim", "add-manual-opponent"].includes(body.action)) {
       if (!source || source.opponentBattleId) return NextResponse.json({ error: "THAT BATTLE IS NO LONGER AVAILABLE." }, { status: 409 });
-      const agencyId = body.action === "claim-battle" ? key(body.agencyId) : key(body.opponentAgencyId || String(body.creatorUsername || "").split("::")[0]);
+      let agencyId = body.action === "claim-battle" ? key(body.agencyId) : key(body.opponentAgencyId || String(body.creatorUsername || "").split("::")[0]);
       const username = body.action === "external-claim" ? clean(String(body.creatorUsername || "").split("::").pop()) : clean(body.creatorUsername);
-      const { data: agency, error: agencyError } = await submissionsSupabase.from("battle_network_agencies").select(AGENCY_COLUMNS).eq("id", agencyId).maybeSingle();
+      const manualAgencyName = clean(body.displayAgencyName);
+      const isTypedManualAgency = body.action === "add-manual-opponent" && agencyId === "external-agency";
+      if (isTypedManualAgency && manualAgencyName) agencyId = `manual-${key(manualAgencyName)}`;
+      const manualAgency = isTypedManualAgency && manualAgencyName
+        ? submissionsSupabase.from("battle_network_agencies").upsert({ id: agencyId, name: manualAgencyName, accent: "#7dd3fc", logo_url: "", external_only: false }, { onConflict: "id" }).select(AGENCY_COLUMNS).single()
+        : null;
+      const { data: agency, error: agencyError } = manualAgency
+        ? await manualAgency
+        : await submissionsSupabase.from("battle_network_agencies").select(AGENCY_COLUMNS).eq("id", agencyId).maybeSingle();
       if (agencyError) throw new Error(agencyError.message); if (!agency || !username) return NextResponse.json({ error: "COMPLETE THE OPPONENT DETAILS." }, { status: 409 }); if (await hasDuplicateBattle({ agency_id: agencyId, week_start: source.weekStart, day: source.day, creator_username: username, requested_time: source.requestedTime })) return NextResponse.json({ error: "A BATTLE FOR THIS CREATOR AT THIS TIME ALREADY EXISTS." }, { status: 409 });
       const { data: created, error: insertError } = await submissionsSupabase.from("battle_network_battles").insert({ agency_id: agencyId, week_start: source.weekStart, day: source.day, creator_username: username, manager: body.action === "claim-battle" ? clean(body.manager) : body.action === "add-manual-opponent" ? `MANUAL: ${clean(body.displayAgencyName) || "MANUAL AGENCY"}` : agency.name, size: source.size, power_ups: source.powerUps, requested_time: source.requestedTime, actual_time: source.requestedTime, opponent_battle_id: source.id }).select(BATTLE_COLUMNS).single();
-      if (insertError) throw new Error(insertError.message); const { error: updateError } = await submissionsSupabase.from("battle_network_battles").update({ opponent_battle_id: created.id }).eq("id", source.id); if (updateError) throw new Error(updateError.message); return NextResponse.json({ battle: toBattle(created) });
+      if (insertError) throw new Error(insertError.message); const { error: updateError } = await submissionsSupabase.from("battle_network_battles").update({ opponent_battle_id: created.id }).eq("id", source.id); if (updateError) throw new Error(updateError.message); return NextResponse.json({ battle: toBattle(created), agency: toAgency(agency) });
     }
     return NextResponse.json({ error: "UNKNOWN BATTLE NETWORK ACTION." }, { status: 400 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "COULD NOT SAVE BATTLE NETWORK." }, { status: 500 }); }
