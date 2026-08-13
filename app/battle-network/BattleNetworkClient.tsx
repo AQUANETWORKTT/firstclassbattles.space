@@ -209,7 +209,7 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
   async function copyBattleSearch(rows: Battle[]) {
     const openBattles = rows.filter((battle: Battle) => !battle.opponentBattleId && !battle.cancelledAt);
     if (!openBattles.length) { setStatus("NO OPEN BATTLES TO COPY."); return; }
-    const message = `Hey, I’ve got some battles up here, can anyone fill for me? 🫶🏽\n\n📆 ${battleSearchDate(openBattles[0])}\n\n${openBattles.map((battle: Battle) => `👤 ${battle.creatorUsername}\n🕥 ${displayTime(battle.requestedTime)}\n🪙 ${battle.size}`).join("\n\n")}`;
+    const message = `Hey, I’ve got some battles here, can anyone fill for me? 🫶🏽\n\n📆 ${battleSearchDate(openBattles[0])}\n\n${openBattles.map((battle: Battle) => `👤 ${battle.creatorUsername}\n🕥 ${displayTime(battle.requestedTime)}\n🪙 ${battle.size}`).join("\n\n")}`;
     try {
       await navigator.clipboard.writeText(message);
       setStatus(`${openBattles.length} BATTLE ${openBattles.length === 1 ? "SEARCH" : "SEARCHES"} COPIED.`);
