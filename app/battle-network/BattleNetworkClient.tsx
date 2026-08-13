@@ -171,6 +171,7 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
 
   async function refreshSnapshot() { const version = snapshotVersion.current; const response = await fetch(`/api/battle-network?week=${encodeURIComponent(week || monday())}`, { cache: "no-store" }); const data = await response.json(); if (version !== snapshotVersion.current) return; if (!response.ok) { setStatus(data.error || "COULD NOT LOAD BATTLE NETWORK."); return; } setAgencies(data.agencies || []); setBattles(data.battles || []); setWeeklySchedules(data.weeklySchedules || []); if (data.cardLayout) setCardLayout(mergeCardLayout(data.cardLayout)); if (data.cardTypography) setCardTypography(mergeCardTypography(data.cardTypography)); }
   useEffect(() => { setWeek(monday()); }, []);
+  useEffect(() => { if (!agency) return; const applyBattleLogo = () => { const logo = document.querySelector<HTMLImageElement>("header img"); if (!logo) return; logo.src = "/world-cup-2026/agencies/first-class.png"; logo.alt = "First Class"; }; applyBattleLogo(); const observer = new MutationObserver(applyBattleLogo); observer.observe(document.body, { childList: true, subtree: true }); return () => observer.disconnect(); }, [agency]);
   useLayoutEffect(() => {
     if (!subspaceEntry) return;
     const hideFirstClassNavigation = () => {
