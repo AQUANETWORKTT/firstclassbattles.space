@@ -208,19 +208,6 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
     wrappers.forEach((wrapper) => { wrapper.style.overflowX = "visible"; });
     return () => { main.style.minWidth = previousWidth; wrappers.forEach((wrapper, index) => { wrapper.style.overflowX = previous[index]; }); };
   }, [agency, tab, week]);
-  useEffect(() => {
-    if (agency?.id !== "first-class-dan-james") return;
-    const anchor = document.querySelector("header + div + details") || document.querySelector("header + div");
-    if (!anchor || document.getElementById("external-agency-settings")) return;
-    const panel = document.createElement("details");
-    panel.id = "external-agency-settings";
-    panel.className = "mt-4 rounded-xl border border-sky-300/30 bg-sky-300/[.04] p-3";
-    const external = agencies.filter((item) => item.externalOnly);
-    panel.innerHTML = `<summary class="cursor-pointer text-xs font-black uppercase text-sky-200">External agency settings</summary><p class="mt-2 text-[10px] font-bold uppercase text-white/50">Removing an external agency also removes its Battle Network entries.</p><div class="mt-3 space-y-2">${external.map((item) => `<div class="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 p-3"><span class="text-xs font-black">${item.name}</span><button type="button" data-remove-agency="${item.id}" class="rounded border border-red-400/50 px-3 py-2 text-[10px] font-black uppercase text-red-300">REMOVE AGENCY</button></div>`).join("") || "<p class=\"text-xs text-white/45\">NO EXTERNAL AGENCIES ADDED.</p>"}</div>`;
-    panel.querySelectorAll<HTMLButtonElement>("button[data-remove-agency]").forEach((button) => { button.onclick = async () => { const target = button.dataset.removeAgency || ""; const name = external.find((item) => item.id === target)?.name || "THIS AGENCY"; if (!window.confirm(`REMOVE ${name}? ITS BATTLE NETWORK ENTRIES WILL ALSO BE REMOVED.`)) return; button.disabled = true; button.textContent = "REMOVING..."; const data = await post({ action: "delete-agency", agencyId: target }); if (data) { setAgencies((items) => items.filter((item) => item.id !== target)); setStatus(`${name} REMOVED.`); } else { button.disabled = false; button.textContent = "TRY AGAIN"; } }; });
-    anchor.insertAdjacentElement("afterend", panel);
-    return () => panel.remove();
-  }, [agency?.id, agencies]);
   useEffect(() => { setCurrentDayIndex(-1); }, []);
   useEffect(() => { if (sessionStorage.getItem("battle-network-external") === "true") setExternalMode(true); }, []);
   useEffect(() => { const mondayValue = monday(week); if (week !== mondayValue) setWeek(mondayValue); }, [week]);

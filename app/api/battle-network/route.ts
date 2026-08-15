@@ -126,9 +126,11 @@ export async function POST(request: Request) {
       const username = body.action === "external-claim" ? clean(String(body.creatorUsername || "").split("::").pop()) : clean(body.creatorUsername);
       const manualAgencyName = clean(body.displayAgencyName);
       const isTypedManualAgency = body.action === "add-manual-opponent" && agencyId === "external-agency";
-      if (isTypedManualAgency && manualAgencyName) agencyId = `manual-${key(manualAgencyName)}`;
+      // A typed agency name belongs only to this one pairing. It must never
+      // create an internal agency or appear in the manager-assignment list.
+      if (isTypedManualAgency && manualAgencyName) agencyId = "manual-opponent";
       const manualAgency = isTypedManualAgency && manualAgencyName
-        ? submissionsSupabase.from("battle_network_agencies").upsert({ id: agencyId, name: manualAgencyName, accent: "#7dd3fc", logo_url: "", external_only: false }, { onConflict: "id" }).select(AGENCY_COLUMNS).single()
+        ? submissionsSupabase.from("battle_network_agencies").upsert({ id: agencyId, name: "MANUAL OPPONENT", accent: "#7dd3fc", logo_url: "", external_only: true }, { onConflict: "id" }).select(AGENCY_COLUMNS).single()
         : null;
       const { data: agency, error: agencyError } = manualAgency
         ? await manualAgency
