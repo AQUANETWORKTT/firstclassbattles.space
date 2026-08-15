@@ -12,7 +12,7 @@ import { submissionsSupabase } from "@/lib/submissions-supabase";
 const compactLogoCache = new Map<string, string>();
 
 function AgencyLoginScreen({ agencies, password, setPassword, status, onLogin, onExternal, subspaceEntry }: any) {
-  const cards = agencies.filter((agency: Agency) => ["paradise", "respawn", "horizon", "trident", "first-class-dan-james", "mike-indi"].includes(agency.id)).sort((first: Agency, second: Agency) => ["paradise", "respawn", "horizon", "trident", "first-class-dan-james", "mike-indi"].indexOf(first.id) - ["paradise", "respawn", "horizon", "trident", "first-class-dan-james", "mike-indi"].indexOf(second.id));
+  const cards = agencies.filter((agency: Agency) => ["paradise", "respawn", "horizon", "trident", "first-class-dan-james", "first-class-mike-indi"].includes(agency.id)).sort((first: Agency, second: Agency) => ["paradise", "respawn", "horizon", "trident", "first-class-dan-james", "first-class-mike-indi"].indexOf(first.id) - ["paradise", "respawn", "horizon", "trident", "first-class-dan-james", "first-class-mike-indi"].indexOf(second.id));
   const [selected, setSelected] = useState(""); const [externalOpen, setExternalOpen] = useState(false); const [externalPassword, setExternalPassword] = useState("");
   const selectedAgency = cards.find((agency: Agency) => agency.id === selected);
   function chooseAgency(id: string) { setSelected(id); setExternalOpen(false); requestAnimationFrame(() => document.getElementById("agency-password")?.scrollIntoView({ behavior: "smooth", block: "center" })); }
