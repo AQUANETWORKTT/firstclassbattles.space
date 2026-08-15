@@ -113,9 +113,15 @@ type TwoVTwoParticipant = { username: string; agencyId: string };
 function getTwoVTwoParticipants(battle: Battle): TwoVTwoParticipant[] | null { try { const value = String(battle.manager || ""); if (!value.startsWith(TWO_V_TWO_PREFIX)) return null; const participants = JSON.parse(value.slice(TWO_V_TWO_PREFIX.length)); return Array.isArray(participants) && (participants.length === 2 || participants.length === 4) && participants.every((item) => item?.username && item?.agencyId) ? participants : null; } catch { return null; } }
 function twoVTwoPosterRow(home: TwoVTwoParticipant[], away: TwoVTwoParticipant[], battle: Battle, agencies: Agency[]) {
   const nameFor = (agencyId: string) => agencies.find((agency) => agency.id === agencyId)?.name || agencyId;
+  const dayOffset = Math.max(0, WEEK_DAYS.indexOf(battle.day));
+  const calendarDate = new Date(`${battle.weekStart}T12:00:00`);
+  calendarDate.setDate(calendarDate.getDate() + dayOffset);
+  const dayNumber = calendarDate.getDate();
+  const ordinal = dayNumber % 10 === 1 && dayNumber !== 11 ? "ST" : dayNumber % 10 === 2 && dayNumber !== 12 ? "ND" : dayNumber % 10 === 3 && dayNumber !== 13 ? "RD" : "TH";
+  const posterDate = `${battle.day} ${dayNumber}${ordinal} ${calendarDate.toLocaleDateString("en-GB", { month: "long" }).toUpperCase()}`;
   const creators = [...home.slice(0, 2), ...away.slice(0, 2)];
   if (creators.length !== 4) return "";
-  return ["2V2", creators[0].username, nameFor(creators[0].agencyId), creators[1].username, nameFor(creators[1].agencyId), creators[2].username, nameFor(creators[2].agencyId), creators[3].username, nameFor(creators[3].agencyId), battle.size, battle.day, displayTime(battle.requestedTime)].join("\t");
+  return ["2V2", creators[0].username, nameFor(creators[0].agencyId), creators[1].username, nameFor(creators[1].agencyId), creators[2].username, nameFor(creators[2].agencyId), creators[3].username, nameFor(creators[3].agencyId), battle.size, posterDate, displayTime(battle.requestedTime)].join("\t");
 }
 function TikTokLink({ username }: { username: string }) { const name = clean(username).toLowerCase(); const url = `https://www.tiktok.com/@${name}`; const isExternalView = typeof window !== "undefined" && sessionStorage.getItem("battle-network-external") === "true"; return isExternalView ? <CopyCreatorLinkButton username={username}/> : <span className="inline-flex max-w-full items-center gap-1.5"><a href={url} target="_blank" rel="noreferrer" className="whitespace-nowrap text-[15px] font-bold leading-none text-sky-300 underline decoration-sky-300/50 underline-offset-2">www.tiktok.com/@{name}</a><button type="button" onClick={() => void navigator.clipboard.writeText(url)} title="COPY TIKTOK LINK" aria-label="Copy TikTok link" className="grid h-6 w-6 shrink-0 place-items-center rounded border border-sky-300/40 text-sm font-black leading-none text-sky-200 transition hover:bg-sky-300 hover:text-black">⧉</button></span>; }
 
@@ -176,7 +182,7 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
   const snapshotVersion = useRef(0);
   const mutationQueue = useRef(Promise.resolve());
   const agency = agencies.find((item) => item.id === agencyId); const byId = (id: string) => agencies.find((item) => item.id === id); const visibleSchedule = useMemo(() => scheduleForWeek(week), [week]);
-  const own = useMemo(() => battles.filter((item) => item.agencyId === agencyId && visibleSchedule.some((entry) => entry.day === item.day && entry.weekStart === item.weekStart)), [battles, agencyId, visibleSchedule]);
+  const own = useMemo(() => battles.filter((item) => (item.agencyId === agencyId || getTwoVTwoParticipants(item)?.some((participant) => participant.agencyId === agencyId)) && visibleSchedule.some((entry) => entry.day === item.day && entry.weekStart === item.weekStart)), [battles, agencyId, visibleSchedule]);
   const unmatched = useMemo(() => battles.filter((item) => item.weekStart === week && !item.opponentBattleId && !item.cancelledAt), [battles, week]);
 
   async function refreshSnapshot() { const version = snapshotVersion.current; const response = await fetch(`/api/battle-network?week=${encodeURIComponent(week || monday())}`, { cache: "no-store" }); const data = await response.json(); if (version !== snapshotVersion.current) return; if (!response.ok) { setStatus(data.error || "COULD NOT LOAD BATTLE NETWORK."); return; } setAgencies(data.agencies || []); setBattles(data.battles || []); setWeeklySchedules(data.weeklySchedules || []); if (data.cardLayout) setCardLayout(mergeCardLayout(data.cardLayout)); if (data.cardTypography) setCardTypography(mergeCardTypography(data.cardTypography)); }
