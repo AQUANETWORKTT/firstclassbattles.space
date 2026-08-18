@@ -209,7 +209,7 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
   const mutationQueue = useRef(Promise.resolve());
   const agency = agencies.find((item) => item.id === agencyId); const byId = (id: string) => agencies.find((item) => item.id === id); const visibleSchedule = useMemo(() => scheduleForWeek(week), [week]);
   const own = useMemo(() => battles.filter((item) => (item.agencyId === agencyId || getTwoVTwoParticipants(item)?.some((participant) => participant.agencyId === agencyId)) && visibleSchedule.some((entry) => entry.day === item.day && entry.weekStart === item.weekStart)), [battles, agencyId, visibleSchedule]);
-  const unmatched = useMemo(() => battles.filter((item) => item.weekStart === week && item.agencyId === agencyId && !item.opponentBattleId && !item.cancelledAt), [battles, week, agencyId]);
+  const unmatched = useMemo(() => battles.filter((item) => item.weekStart === week && !item.opponentBattleId && !item.cancelledAt), [battles, week]);
 
   async function refreshSnapshot() { const version = snapshotVersion.current; const response = await fetch(`/api/battle-network?week=${encodeURIComponent(week || monday())}`, { cache: "no-store" }); const data = await response.json(); if (version !== snapshotVersion.current) return; if (!response.ok) { setStatus(data.error || "COULD NOT LOAD BATTLE NETWORK."); return; } setAgencies(data.agencies || []); setBattles(data.battles || []); setWeeklySchedules(data.weeklySchedules || []); if (data.cardLayout) setCardLayout(mergeCardLayout(data.cardLayout)); if (data.cardTypography) setCardTypography(mergeCardTypography(data.cardTypography)); }
   useEffect(() => { setWeek(monday()); }, []);
