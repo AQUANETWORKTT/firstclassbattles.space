@@ -292,7 +292,7 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
   async function copyPosterRows(rows: Battle[], button?: HTMLButtonElement) { const flash = (label: string, colour: string) => { if (!button) return; const original = button.textContent || "COPY POSTER"; button.textContent = label; button.style.background = colour; button.style.color = "#050505"; button.style.borderColor = colour; button.style.transform = "scale(1.04)"; window.setTimeout(() => { button.textContent = original; button.style.background = ""; button.style.color = ""; button.style.borderColor = ""; button.style.transform = ""; }, 1800); }; const completeRows = rows.flatMap((battle) => { if (getTwoVTwoParticipants(battle)) return []; const opponent = battles.find((item) => item.id === battle.opponentBattleId); const opponentAgency = opponent ? byId(opponent.agencyId) : undefined; return opponent && opponentAgency && !getTwoVTwoParticipants(opponent) ? [posterRow(battle, opponent, opponentAgency)] : []; }); if (!completeRows.length) { setStatus("NO COMPLETED BATTLES TO COPY."); setToast("NO COMPLETED POSTER ROWS"); flash("NO ROWS", "#fbbf24"); window.setTimeout(() => setToast(""), 2500); return; } const value = completeRows.join("\n"); try { if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value); else { const area = document.createElement("textarea"); area.value = value; area.style.position = "fixed"; area.style.opacity = "0"; document.body.appendChild(area); area.select(); if (!document.execCommand("copy")) throw new Error("COPY FAILED"); area.remove(); } const message = `${completeRows.length} POSTER ${completeRows.length === 1 ? "ROW" : "ROWS"} COPIED.`; setStatus(message); setToast(message); flash("COPIED ✓", "#6ee7b7"); window.setTimeout(() => setToast(""), 2500); } catch { setStatus("COULD NOT COPY POSTER ROWS."); setToast("COPY FAILED — PLEASE TRY AGAIN"); flash("COPY FAILED", "#f87171"); window.setTimeout(() => setToast(""), 2500); } }
   async function saveDefaultLayout() { const data = await post({ action: "save-card-layout", cardLayout, cardTypography }); if (data) { setCardLayout(mergeCardLayout(data.cardLayout)); setCardTypography(mergeCardTypography(data.cardTypography)); setLayoutEditing(false); setStatus("DEFAULT BATTLE CARD LAYOUT SAVED."); } }
   const orderedOwn = useMemo(() => [...own].sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.requestedTime.localeCompare(b.requestedTime)), [own]);
-  const candidates = matching ? battles.filter((item) => item.id !== matching.battle.id && !item.opponentBattleId && item.day === matching.battle.day && item.size === matching.battle.size && (item.powerUps || "POWER-UPS ALLOWED") === (matching.battle.powerUps || "POWER-UPS ALLOWED") && (matching.mode === "EXACT" ? item.requestedTime === matching.battle.requestedTime : isCloseTime(item.requestedTime, matching.battle.requestedTime))) : [];
+  const candidates = matching ? battles.filter((item) => item.id !== matching.battle.id && item.agencyId !== matching.battle.agencyId && !item.opponentBattleId && item.day === matching.battle.day && item.size === matching.battle.size && (item.powerUps || "POWER-UPS ALLOWED") === (matching.battle.powerUps || "POWER-UPS ALLOWED") && (matching.mode === "EXACT" ? item.requestedTime === matching.battle.requestedTime : isCloseTime(item.requestedTime, matching.battle.requestedTime))) : [];
   useEffect(() => {
     if (!matching) return;
     const pairs = ((initialData as any).incompatibilities || []) as Array<{ first?: string; second?: string; reason?: string }>;
@@ -303,7 +303,13 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
       if (!issue) return;
       button.disabled = true;
       button.className = `${button.className} animate-pulse border-red-400 bg-red-500/25`;
-      button.title = issue.reason || "Incompatible creators";
+      const tooltip = issue.reason || "Incompatible creators";
+      const wrapper = document.createElement("div");
+      wrapper.className = "w-full";
+      wrapper.title = tooltip;
+      button.replaceWith(wrapper);
+      wrapper.append(button);
+      button.style.pointerEvents = "none";
       const warning = document.createElement("p");
       warning.className = "mt-1 text-xs font-black text-red-300";
       warning.textContent = "⚠ INCOMPATIBLE — CANNOT MATCH";
