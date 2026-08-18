@@ -50,6 +50,20 @@ function ExternalAgencyBattleBoard({ rows, agency, agencies, week, setWeek, onEx
   const [days, setDays] = useState<string[]>([]);
   const cancelled: Battle[] = [];
   useEffect(() => { const anchor = document.querySelector("details"); if (!anchor || !cancelled.length || document.getElementById("cancelled-battles")) return; const section = document.createElement("section"); section.id = "cancelled-battles"; section.className = "mt-4 rounded-2xl border border-amber-400/35 bg-amber-400/[.04] p-4"; section.innerHTML = `<p class="text-sm font-black uppercase tracking-[.14em] text-amber-300">CANCELLED BATTLES ADDED BACK TO AVAILABLE BATTLES (${cancelled.length})</p>`; cancelled.forEach((battle: Battle) => { const row = document.createElement("div"); row.className = "mt-3 flex items-center justify-between gap-3 rounded-xl border border-amber-300/20 bg-black/30 p-3 text-sm"; row.innerHTML = `<span>@${battle.creatorUsername} · ${battle.day} · ${displayTime(battle.requestedTime)} · ${battle.size}</span>`; const button = document.createElement("button"); button.textContent = "WITHDRAW REQUEST"; button.className = "rounded-lg border border-red-300/50 px-3 py-2 text-[10px] font-black text-red-200"; button.onclick = async () => { button.disabled = true; button.textContent = "WITHDRAWING..."; const response = await fetch("/api/battle-network", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "external-withdraw", battleId: battle.id }) }); if (response.ok) { row.remove(); if (!section.querySelector("div")) section.remove(); } else { button.disabled = false; button.textContent = "TRY AGAIN"; } }; row.append(button); section.append(row); }); anchor.insertAdjacentElement("afterend", section); return () => section.remove(); }, [cancelled, agency.id]);
+  useEffect(() => {
+    const applyDates = () => {
+      document.querySelectorAll("#external-battle-filters label").forEach((element) => {
+        const text = element.textContent?.trim() || "";
+        const day = WEEK_DAYS.find((value) => text === value || text.startsWith(`${value} `));
+        if (day) element.lastChild?.replaceWith(` ${dayDateLabel(day, week)}`);
+      });
+      document.querySelectorAll(".battle-field span").forEach((element) => {
+        const day = WEEK_DAYS.find((value) => element.textContent?.trim() === value);
+        if (day) element.textContent = dayDateLabel(day, week);
+      });
+    };
+    applyDates();
+  }, [week, available, sizes, days]);
   const byId = (id: string) => agencies.find((item: Agency) => item.id === id);
   const toggleFilter = (value: string, values: string[], setValues: (next: string[]) => void) => setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
   const available = rows.filter((battle: Battle) => !battle.opponentBattleId && battle.agencyId !== agency.id && (!sizes.length || sizes.includes(battle.size)) && (!days.length || days.includes(battle.day))).sort((a: Battle, b: Battle) => WEEK_DAYS.indexOf(a.day) - WEEK_DAYS.indexOf(b.day) || minutes(a.requestedTime) - minutes(b.requestedTime) || a.creatorUsername.localeCompare(b.creatorUsername));
@@ -91,8 +105,11 @@ function mergeCardTypography(typography?: Partial<CardTypography>): CardTypograp
 
 function monday(value?: string) { const date = value ? new Date(`${value}T12:00:00`) : new Date(); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return date.toISOString().slice(0, 10); }
 function clean(value: string) { return value.trim().replace(/^@/, ""); }
+function creatorIdentity(value: string) { return clean(value).toLowerCase().replace(/[^a-z0-9]/g, ""); }
+function incompatibilityFor(items: Array<{ first?: string; second?: string; reason?: string }>, first: string, second: string) { const left = creatorIdentity(first), right = creatorIdentity(second); return items.find((item) => (creatorIdentity(item.first || "") === left && creatorIdentity(item.second || "") === right) || (creatorIdentity(item.first || "") === right && creatorIdentity(item.second || "") === left)); }
 function displayTime(value: string) { const [hourText, minutes = "00"] = value.split(":"); const hour = Number(hourText); return `${hour % 12 || 12}:${minutes} ${hour >= 12 ? "PM" : "AM"}`; }
 function battleSearchDate(battle: Battle) { const date = new Date(`${battle.weekStart}T12:00:00`); date.setDate(date.getDate() + Math.max(0, WEEK_DAYS.indexOf(battle.day))); return `${battle.day} ${date.toLocaleDateString("en-GB", { day: "numeric", month: "long" }).toUpperCase()}`; }
+function dayDateLabel(day: string, weekStart: string) { return battleSearchDate({ weekStart, day } as Battle); }
 function minutes(value: string) { const [hours = "0", mins = "0"] = value.split(":"); return Number(hours) * 60 + Number(mins); }
 function isCloseTime(first: string, second: string) { const a = minutes(first), b = minutes(second); return a >= 18 * 60 && b >= 18 * 60 && Math.abs(a - b) > 0 && Math.abs(a - b) <= 15; }
 const CALENDAR_DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
@@ -276,6 +293,23 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
   async function saveDefaultLayout() { const data = await post({ action: "save-card-layout", cardLayout, cardTypography }); if (data) { setCardLayout(mergeCardLayout(data.cardLayout)); setCardTypography(mergeCardTypography(data.cardTypography)); setLayoutEditing(false); setStatus("DEFAULT BATTLE CARD LAYOUT SAVED."); } }
   const orderedOwn = useMemo(() => [...own].sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.requestedTime.localeCompare(b.requestedTime)), [own]);
   const candidates = matching ? battles.filter((item) => item.id !== matching.battle.id && !item.opponentBattleId && item.day === matching.battle.day && item.size === matching.battle.size && (item.powerUps || "POWER-UPS ALLOWED") === (matching.battle.powerUps || "POWER-UPS ALLOWED") && (matching.mode === "EXACT" ? item.requestedTime === matching.battle.requestedTime : isCloseTime(item.requestedTime, matching.battle.requestedTime))) : [];
+  useEffect(() => {
+    if (!matching) return;
+    const pairs = ((initialData as any).incompatibilities || []) as Array<{ first?: string; second?: string; reason?: string }>;
+    document.querySelectorAll("button").forEach((button) => {
+      const candidate = candidates.find((item) => button.textContent?.includes(`PAIR WITH @${item.creatorUsername}`));
+      if (!candidate) return;
+      const issue = incompatibilityFor(pairs, matching.battle.creatorUsername, candidate.creatorUsername);
+      if (!issue) return;
+      button.disabled = true;
+      button.className = `${button.className} animate-pulse border-red-400 bg-red-500/25`;
+      button.title = issue.reason || "Incompatible creators";
+      const warning = document.createElement("p");
+      warning.className = "mt-1 text-xs font-black text-red-300";
+      warning.textContent = "⚠ INCOMPATIBLE — CANNOT MATCH";
+      button.querySelector("div")?.append(warning);
+    });
+  }, [matching, candidates, initialData]);
 
   if (externalMode) return <ExternalBattleScreen rows={battles} agencies={agencies} week={week} setWeek={setWeek} onExit={() => { sessionStorage.removeItem("battle-network-external"); sessionStorage.removeItem("battle-network-external-agency"); sessionStorage.removeItem("battle-network-external-confirmed"); setExternalMode(false); }} onClaim={async (battle: Battle, creatorUsername: string) => { const selectedPartner = sessionStorage.getItem("battle-network-external-agency") || ""; if (!selectedPartner) { setStatus("CHOOSE YOUR AGENCY FIRST."); return false; } const data = await post({ action: "external-claim", sourceId: battle.id, creatorUsername: `${selectedPartner}::${creatorUsername}` }); if (data) { setBattles((rows) => [...rows.map((row) => row.id === battle.id ? { ...row, opponentBattleId: data.battle.id } : row), data.battle]); sessionStorage.setItem("battle-network-external-confirmed", JSON.stringify({ ...battle, opponentBattleId: data.battle.id })); return true; } return false; }} />;
   if (!agency) return <AgencyLoginScreen agencies={agencies} password={password} setPassword={setPassword} status={status} onLogin={login} subspaceEntry={subspaceEntry} onExternal={() => { sessionStorage.setItem("battle-network-external", "true"); setExternalMode(true); setStatus(""); }} />;
@@ -397,6 +431,19 @@ function Available({ agency, rows, own, byId, onMatch, onClaim, isAdmin, onAdmin
   const [sizes, setSizes] = useState<string[]>([]);
   const [days, setDays] = useState<string[]>([]);
   const toggle = (value: string, values: string[], setValues: (next: string[]) => void) => setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  const weekStart = rows[0]?.weekStart || monday();
+  useEffect(() => {
+    const dateForDay = (day: string) => dayDateLabel(day, weekStart);
+    document.querySelectorAll("label").forEach((element) => {
+      const text = element.textContent?.trim() || "";
+      const day = WEEK_DAYS.find((value) => text === value || text.startsWith(`${value} `));
+      if (day && element.querySelector('input[type="checkbox"]')) element.lastChild?.replaceWith(` ${dateForDay(day)}`);
+    });
+    document.querySelectorAll("h3, .battle-field span").forEach((element) => {
+      const day = WEEK_DAYS.find((value) => element.textContent?.trim() === value);
+      if (day) element.textContent = dateForDay(day);
+    });
+  }, [weekStart, rows, sizes, days]);
   const ownMatches = (battle: Battle) => own.filter((mine: Battle) => mine.id !== battle.id && !mine.opponentBattleId && mine.day === battle.day && mine.size === battle.size && mine.requestedTime === battle.requestedTime && mine.powerUps === battle.powerUps);
   const filtered = [...rows].filter((battle: Battle) => (!sizes.length || sizes.includes(battle.size)) && (!days.length || days.includes(battle.day))).sort((a: Battle, b: Battle) => WEEK_DAYS.indexOf(a.day) - WEEK_DAYS.indexOf(b.day) || minutes(a.requestedTime) - minutes(b.requestedTime));
   const displayed = filtered;
