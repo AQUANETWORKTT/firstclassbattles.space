@@ -23,9 +23,9 @@ async function ensureWeeklySchedules(current: Record<string, unknown>) {
   const weeks = [currentWeekStart(), weekAfter(currentWeekStart())];
   for (const schedule of schedules) for (const weekStart of weeks) {
     if (skips.has(occurrenceKey(schedule.id, weekStart))) continue;
-    const { data: existing, error: existingError } = await submissionsSupabase.from("battle_network_battles").select("id").eq("agency_id", schedule.agencyId).eq("week_start", weekStart).eq("day", schedule.day).eq("requested_time", schedule.requestedTime).ilike("creator_username", schedule.creatorUsername).limit(1);
+    const { data: existing, error: existingError } = await submissionsSupabase.from("battle_network_battles").select("id,creator_username").eq("agency_id", schedule.agencyId).eq("week_start", weekStart).eq("day", schedule.day).eq("requested_time", schedule.requestedTime);
     if (existingError) throw new Error(existingError.message);
-    if (existing?.length) continue;
+    if (existing?.some((row) => creatorKey(row.creator_username) === creatorKey(schedule.creatorUsername))) continue;
     const { error } = await submissionsSupabase.from("battle_network_battles").insert({ id: crypto.randomUUID(), agency_id: schedule.agencyId, week_start: weekStart, day: schedule.day, creator_username: schedule.creatorUsername, manager: schedule.manager, size: schedule.size, power_ups: schedule.powerUps, requested_time: schedule.requestedTime, actual_time: schedule.requestedTime });
     if (error) throw new Error(error.message);
   }
