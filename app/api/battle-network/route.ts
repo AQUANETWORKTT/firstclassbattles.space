@@ -149,8 +149,6 @@ export async function POST(request: Request) {
     const source = await battle(String(body.sourceId));
     if (["claim-battle", "external-claim", "add-manual-opponent"].includes(body.action)) {
       if (!source || source.opponentBattleId) return NextResponse.json({ error: "THAT BATTLE IS NO LONGER AVAILABLE." }, { status: 409 });
-      if (body.action === "claim-battle" && source.agencyId === key(body.agencyId)) return NextResponse.json({ error: "AN AGENCY CANNOT CLAIM ITS OWN BATTLE." }, { status: 409 });
-      if (body.action === "claim-battle" && source.agencyId !== key(body.agencyId)) return NextResponse.json({ error: "ONLY YOUR AGENCY'S BATTLES CAN BE CLAIMED FROM THIS SCREEN." }, { status: 409 });
       if (twoVTwoParticipants(source.manager)) return NextResponse.json({ error: "A 2V2 MUST BE CLAIMED WITH TWO OPPONENTS AND THEIR AGENCIES." }, { status: 409 });
       let agencyId = body.action === "claim-battle" ? key(body.agencyId) : key(body.opponentAgencyId || String(body.creatorUsername || "").split("::")[0]);
       const username = body.action === "external-claim" ? clean(String(body.creatorUsername || "").split("::").pop()) : clean(body.creatorUsername);
