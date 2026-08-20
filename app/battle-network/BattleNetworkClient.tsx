@@ -475,7 +475,7 @@ function TypedManualOpponentModal({ battle, agency, agencies = [], onClose }: an
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const selectedAgency = agencies.find((item: Agency) => item.id === selectedAgencyId);
-  const selectableAgencies = agencies.filter((item: Agency) => item.id !== "external-agency" && item.id !== agency.id);
+  const selectableAgencies = agencies.filter((item: Agency) => item.id !== "external-agency");
   async function submit(event: FormEvent) {
     event.preventDefault();
     const name = (selectedAgency?.name || agencyName).trim();
