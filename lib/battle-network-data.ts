@@ -3,7 +3,7 @@ import { submissionsSupabase } from "@/lib/submissions-supabase";
 const AGENCY_COLUMNS = "id,name,accent,logo_url,external_only";
 const BATTLE_COLUMNS = "id,agency_id,week_start,day,creator_username,manager,size,power_ups,requested_time,actual_time,opponent_battle_id,created_at,cancelled_at,cancelled_by";
 
-function time(value: string | null) { return String(value || "").slice(0, 5); }
+function time(value: string | null) { const stored = String(value || "").slice(0, 5); return stored === "00:00" ? "ANY TIME" : stored; }
 function currentWeekStart() {
   const date = new Date();
   const offset = (date.getDay() + 6) % 7;
