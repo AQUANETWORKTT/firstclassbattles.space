@@ -235,12 +235,18 @@ export default function BattleNetworkClient({ initialData, initialAgencyId, subs
   const [cardTypography, setCardTypography] = useState<CardTypography>(() => mergeCardTypography(initialData.cardTypography as Partial<CardTypography>));
   const [selectedLayoutSection, setSelectedLayoutSection] = useState<LayoutSection>("home");
   const [toast, setToast] = useState("");
+  const [creatorSearch, setCreatorSearch] = useState("");
+  const [activeCreatorSearch, setActiveCreatorSearch] = useState("");
   const lastMutationAt = useRef(0);
   const snapshotVersion = useRef(0);
   const mutationQueue = useRef(Promise.resolve());
   const agency = agencies.find((item) => item.id === agencyId); const byId = (id: string) => agencies.find((item) => item.id === id); const visibleSchedule = useMemo(() => scheduleForWeek(week), [week]);
   const own = useMemo(() => battles.filter((item) => (item.agencyId === agencyId || getTwoVTwoParticipants(item)?.some((participant) => participant.agencyId === agencyId)) && visibleSchedule.some((entry) => entry.day === item.day && entry.weekStart === item.weekStart)), [battles, agencyId, visibleSchedule]);
   const unmatched = useMemo(() => battles.filter((item) => item.weekStart === week && !item.opponentBattleId && !item.cancelledAt), [battles, week]);
+
+  useEffect(() => { const timer = window.setTimeout(() => setActiveCreatorSearch(creatorSearch.trim().toLowerCase()), 2000); return () => window.clearTimeout(timer); }, [creatorSearch]);
+  useEffect(() => { const header = document.querySelector("main header"); if (!header || document.getElementById("battle-network-creator-search")) return; const wrapper = document.createElement("label"); wrapper.id = "battle-network-creator-search"; wrapper.className = "w-full sm:w-auto"; wrapper.innerHTML = '<span class="mb-1 block text-[10px] font-black uppercase tracking-[.15em] text-white/50">Creator search</span><input placeholder="TYPE A CREATOR NAME" class="w-full rounded-lg border border-[#39ff14]/60 bg-black px-3 py-2 text-xs font-black uppercase text-white outline-none placeholder:text-white/35 sm:w-56"/>'; const input = wrapper.querySelector("input") as HTMLInputElement; input.value = creatorSearch; input.oninput = () => setCreatorSearch(input.value); header.append(wrapper); return () => wrapper.remove(); }, [agencyId]);
+  useEffect(() => { document.querySelectorAll<HTMLElement>("span[title]").forEach((element) => { const match = Boolean(activeCreatorSearch) && (element.getAttribute("title") || "").toLowerCase().includes(activeCreatorSearch); element.style.background = match ? "#39ff14" : ""; element.style.color = match ? "#020602" : ""; element.style.paddingInline = match ? "3px" : ""; element.style.borderRadius = match ? "3px" : ""; }); }, [activeCreatorSearch, battles, tab]);
 
   async function refreshSnapshot() { const version = snapshotVersion.current; const response = await fetch(`/api/battle-network?week=${encodeURIComponent(week || monday())}`, { cache: "no-store" }); const data = await response.json(); if (version !== snapshotVersion.current) return; if (!response.ok) { setStatus(data.error || "COULD NOT LOAD BATTLE NETWORK."); return; } if (typeof window !== "undefined") { (window as any).__battleNetworkPosterMade = data.posterMade || {}; window.dispatchEvent(new Event("battle-network-poster-status")); } setAgencies(data.agencies || []); setBattles(data.battles || []); setWeeklySchedules(data.weeklySchedules || []); if (data.cardLayout) setCardLayout(mergeCardLayout(data.cardLayout)); if (data.cardTypography) setCardTypography(mergeCardTypography(data.cardTypography)); }
   useEffect(() => { setWeek(monday()); }, []);
