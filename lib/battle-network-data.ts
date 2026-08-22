@@ -28,7 +28,7 @@ export function toBattle(row: Record<string, unknown>) {
   };
 }
 
-export type BattleNetworkInitialData = { agencies: ReturnType<typeof toAgency>[]; battles: ReturnType<typeof toBattle>[]; cardLayout?: unknown; cardTypography?: unknown; managerSettings?: unknown; incompatibilities?: unknown; posterMade?: unknown; error?: string };
+export type BattleNetworkInitialData = { agencies: ReturnType<typeof toAgency>[]; battles: ReturnType<typeof toBattle>[]; cardLayout?: unknown; cardTypography?: unknown; managerSettings?: unknown; incompatibilities?: unknown; bannedCreators?: unknown; posterMade?: unknown; error?: string };
 
 export async function getBattleNetworkInitialData(): Promise<BattleNetworkInitialData> {
   const startedAt = performance.now();
@@ -51,9 +51,9 @@ export async function getBattleNetworkInitialData(): Promise<BattleNetworkInitia
   }
   const error = agenciesResult.error || battlesResult.error || settingsResult.error;
   if (error) return { agencies: [], battles: [], error: error.message };
-  const settings = (settingsResult.data?.template_json || {}) as { cardLayout?: unknown; cardTypography?: unknown; managerSettings?: unknown; incompatibilities?: unknown; posterMade?: unknown };
+  const settings = (settingsResult.data?.template_json || {}) as { cardLayout?: unknown; cardTypography?: unknown; managerSettings?: unknown; incompatibilities?: unknown; bannedCreators?: unknown; posterMade?: unknown };
   console.info(`[battle-network] initial parallel queries ${Math.round(performance.now() - startedAt)}ms`);
-  return { agencies: (agenciesResult.data || []).map(toAgency), battles: (battlesResult.data || []).map(toBattle), cardLayout: settings.cardLayout, cardTypography: settings.cardTypography, managerSettings: settings.managerSettings, incompatibilities: settings.incompatibilities, posterMade: settings.posterMade };
+  return { agencies: (agenciesResult.data || []).map(toAgency), battles: (battlesResult.data || []).map(toBattle), cardLayout: settings.cardLayout, cardTypography: settings.cardTypography, managerSettings: settings.managerSettings, incompatibilities: settings.incompatibilities, bannedCreators: settings.bannedCreators, posterMade: settings.posterMade };
 }
 
 export { AGENCY_COLUMNS, BATTLE_COLUMNS };
