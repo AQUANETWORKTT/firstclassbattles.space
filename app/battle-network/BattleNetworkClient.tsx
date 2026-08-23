@@ -173,11 +173,22 @@ function resolvedMatchTime(first: string, second: string) { return isFixedEvenin
 function isCloseTime(first: string, second: string) { const a = minutes(first), b = minutes(second); return a >= 18 * 60 && b >= 18 * 60 && Math.abs(a - b) > 0 && Math.abs(a - b) <= 15; }
 const CALENDAR_DAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
 function battleTimestamp(battle: Battle) { const date = new Date(`${battle.weekStart}T12:00:00`); date.setDate(date.getDate() + Math.max(0, CALENDAR_DAYS.indexOf(battle.day))); return date.getTime(); }
-function hasRecentOpponentMatch(battle: Battle, opponent: Battle | undefined, all: Battle[]) {
-  if (!opponent) return false;
-  const currentTime = battleTimestamp(battle); const pair = [clean(battle.creatorUsername).toLowerCase(), clean(opponent.creatorUsername).toLowerCase()].sort().join("|");
-  return all.some((row) => { if (row.id === battle.id || row.id === opponent.id || !row.opponentBattleId) return false; const other = all.find((item) => item.id === row.opponentBattleId); if (!other) return false; const otherPair = [clean(row.creatorUsername).toLowerCase(), clean(other.creatorUsername).toLowerCase()].sort().join("|"); const time = battleTimestamp(row); return otherPair === pair && time < currentTime && currentTime - time <= 14 * 24 * 60 * 60 * 1000; });
+function recentOpponentMatchDates(battle: Battle, opponent: Battle | undefined, all: Battle[]) {
+  if (!opponent) return [];
+  const currentTime = battleTimestamp(battle);
+  const pair = [creatorIdentity(battle.creatorUsername), creatorIdentity(opponent.creatorUsername)].sort().join("|");
+  const dates = new Set<string>();
+  for (const row of all) {
+    if (row.id === battle.id || row.id === opponent.id || !row.opponentBattleId || row.id > row.opponentBattleId) continue;
+    const other = all.find((item) => item.id === row.opponentBattleId);
+    if (!other) continue;
+    const otherPair = [creatorIdentity(row.creatorUsername), creatorIdentity(other.creatorUsername)].sort().join("|");
+    const time = battleTimestamp(row);
+    if (otherPair === pair && Math.abs(currentTime - time) <= 14 * 24 * 60 * 60 * 1000) dates.add(battleSearchDate(row));
+  }
+  return [...dates];
 }
+function hasRecentOpponentMatch(battle: Battle, opponent: Battle | undefined, all: Battle[]) { return recentOpponentMatchDates(battle, opponent, all).length > 0; }
 function posterRow(battle: Battle, opponent: Battle, opponentAgency: Agency) { const creatorUrl = `https://www.tiktok.com/@${clean(battle.creatorUsername).toLowerCase()}`; const opponentUrl = `https://www.tiktok.com/@${clean(opponent.creatorUsername).toLowerCase()}`; const opponentAgencyName = opponent.manager.startsWith("MANUAL: ") ? opponent.manager.slice(8) : opponentAgency.name; const date = new Date(`${battle.weekStart}T12:00:00`); date.setDate(date.getDate() + Math.max(0, WEEK_DAYS.indexOf(battle.day))); const number = date.getDate(); const suffix = number % 10 === 1 && number !== 11 ? "ST" : number % 10 === 2 && number !== 12 ? "ND" : number % 10 === 3 && number !== 13 ? "RD" : "TH"; const fullDate = `${battle.day} ${number}${suffix} ${date.toLocaleDateString("en-GB", { month: "long" }).toUpperCase()}`; return `${battle.creatorUsername}\t${battle.manager}\t${battle.size}\t${creatorUrl}\t${displayTime(battle.requestedTime)}\t${opponentUrl}\t${displayTime(battle.actualTime)}\t${opponentAgencyName}\t${fullDate}`; }
 function draftFor(day: string): Draft { return { day, creatorUsername: "", manager: "", size: "1 - 5K", powerUps: "POWER-UPS ALLOWED", requestedTime: "" }; }
 function activeDayIndex() { const now = new Date(); const mondayIndex = (now.getDay() + 6) % 7; return now.getHours() < 3 ? (mondayIndex + 6) % 7 : mondayIndex; }
@@ -479,8 +490,8 @@ function CompactBattleRow({ battle, agency, opponent, opponentAgency, all, onCop
   const creatorConflict = all.some((item: Battle) => item.id !== battle.id && item.agencyId !== battle.agencyId && sameCreatorSlot(item, battle));
   const opponentCreatorConflict = Boolean(opponent) && all.some((item: Battle) => item.id !== opponent.id && item.agencyId !== opponent.agencyId && sameCreatorSlot(item, opponent));
   const duplicateBattle = all.some((item: Battle) => item.id !== battle.id && item.agencyId === battle.agencyId && item.weekStart === battle.weekStart && item.day === battle.day && item.requestedTime === battle.requestedTime && clean(item.creatorUsername).toLowerCase() === clean(battle.creatorUsername).toLowerCase());
-  const recentOpponentMatch = hasRecentOpponentMatch(battle, opponent, all);
-  const warningMessage = duplicateBattle ? "DUPLICATE BATTLE" : recentOpponentMatch ? "THESE CREATORS HAVE BATTLED WITHIN THE LAST 14 DAYS" : creatorConflict || opponentCreatorConflict ? "CREATOR IS ALREADY BOOKED AT THIS TIME" : "";
+  const recentOpponentDates = recentOpponentMatchDates(battle, opponent, all);
+  const warningMessage = duplicateBattle ? "DUPLICATE BATTLE" : recentOpponentDates.length ? `THESE CREATORS ALSO BATTLE ON: ${recentOpponentDates.join(", ")}` : creatorConflict || opponentCreatorConflict ? "CREATOR IS ALREADY BOOKED AT THIS TIME" : "";
   useEffect(() => { if (!warningMessage) return; const row = Array.from(document.querySelectorAll("button[title='EDIT HOME BATTLE']")).find((button) => button.closest("tr")?.textContent?.includes(battle.creatorUsername))?.closest("tr") as HTMLElement | null; if (!row) return; row.classList.add("bg-red-500/20", "ring-1", "ring-red-400/70"); return () => row.classList.remove("bg-red-500/20", "ring-1", "ring-red-400/70"); }, [battle.creatorUsername, warningMessage]);
   const matchAvailable = !opponent && all.some((item: Battle) => item.id !== battle.id && creatorIdentity(item.creatorUsername) !== creatorIdentity(battle.creatorUsername) && !item.opponentBattleId && item.weekStart === battle.weekStart && item.day === battle.day && item.size === battle.size && isExactOrAnyTimeMatch(item.requestedTime, battle.requestedTime) && (item.powerUps || "POWER-UPS ALLOWED") === (battle.powerUps || "POWER-UPS ALLOWED"));
   const closeMatchAvailable = !opponent && !matchAvailable && all.some((item: Battle) => item.id !== battle.id && creatorIdentity(item.creatorUsername) !== creatorIdentity(battle.creatorUsername) && !item.opponentBattleId && item.weekStart === battle.weekStart && item.day === battle.day && item.size === battle.size && (item.powerUps || "POWER-UPS ALLOWED") === (battle.powerUps || "POWER-UPS ALLOWED") && isCloseTime(item.requestedTime, battle.requestedTime));
