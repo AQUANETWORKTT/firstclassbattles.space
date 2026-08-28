@@ -100,11 +100,13 @@ async function recordBattleAudit(action: string, current: Awaited<ReturnType<typ
   if (error) console.error("Could not write battle audit record:", error.message);
 }
 async function hasDuplicateBattle(row: { agency_id: string; week_start: unknown; day: string; creator_username: string; requested_time: string }, excludeId?: string) {
-  let query = submissionsSupabase.from("battle_network_battles").select("id").eq("agency_id", row.agency_id).eq("week_start", row.week_start).eq("day", row.day).eq("requested_time", row.requested_time).ilike("creator_username", row.creator_username);
+  // Do not use ILIKE here: underscores in TikTok usernames are SQL wildcards
+  // and can falsely block a completely different creator as a duplicate.
+  let query = submissionsSupabase.from("battle_network_battles").select("id,creator_username").eq("agency_id", row.agency_id).eq("week_start", row.week_start).eq("day", row.day).eq("requested_time", row.requested_time);
   if (excludeId) query = query.neq("id", excludeId);
-  const { data, error } = await query.limit(1);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return Boolean(data?.length);
+  return Boolean(data?.some((item) => creatorKey(item.creator_username) === creatorKey(row.creator_username)));
 }
 
 export async function GET(request: Request) {
