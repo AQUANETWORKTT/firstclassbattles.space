@@ -12,6 +12,9 @@ const ANY_TIME = "ANY TIME";
 // The database column is a SQL time field, so "00:00" is reserved internally
 // for the flexible Any Time option and converted back before it reaches the UI.
 const ANY_TIME_STORAGE = "00:00";
+// Supabase returns a maximum of 1,000 rows per request. The Battle Network
+// needs the complete selected date range, so fetch every page of results.
+const BATTLE_PAGE_SIZE = 1000;
 const time = (value: unknown) => String(value || "").trim().toUpperCase() === ANY_TIME ? ANY_TIME_STORAGE : String(value || "").slice(0, 5);
 const isAnyTime = (value: string) => value.trim().toUpperCase() === ANY_TIME;
 const timeMinutes = (value: string) => { const [hours, minutes] = value.split(":").map(Number); return hours * 60 + minutes; };
@@ -86,6 +89,28 @@ async function battle(id: string) {
   if (error) throw new Error(error.message);
   return data ? toBattle(data) : null;
 }
+async function battlesForWindow(weekStart: string) {
+  const battles: Record<string, unknown>[] = [];
+  const firstWeek = historyWeekStart(weekStart);
+  const lastWeek = endWeekStart(weekStart);
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await submissionsSupabase
+      .from("battle_network_battles")
+      .select(BATTLE_COLUMNS)
+      .gte("week_start", firstWeek)
+      .lte("week_start", lastWeek)
+      .not("creator_username", "ilike", "test-%")
+      .order("created_at", { ascending: false })
+      .range(from, from + BATTLE_PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const page = (data || []) as unknown as Record<string, unknown>[];
+    battles.push(...page);
+    if (page.length < BATTLE_PAGE_SIZE) return battles;
+    from += BATTLE_PAGE_SIZE;
+  }
+}
 async function hasDuplicateBattle(row: { agency_id: string; week_start: unknown; day: string; creator_username: string; requested_time: string }, excludeId?: string) {
   // SQL ILIKE treats underscores as wildcards. Compare normalised usernames
   // in code so @baby_b277 cannot be confused with another creator.
@@ -110,15 +135,15 @@ export async function GET(request: Request) {
     const results = await Promise.race([
       Promise.all([
         submissionsSupabase.from("battle_network_agencies").select(includePasswords ? `${AGENCY_COLUMNS},password` : AGENCY_COLUMNS).order("name"),
-        submissionsSupabase.from("battle_network_battles").select(BATTLE_COLUMNS).gte("week_start", historyWeekStart(weekStart)).lte("week_start", endWeekStart(weekStart)).not("creator_username", "ilike", "test-%").order("created_at", { ascending: false }),
+        battlesForWindow(weekStart),
       ]),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
     ]);
     const layout = await layoutPromise;
     if (!results) return NextResponse.json({ agencies: [], battles: [], cardLayout: layout.cardLayout, cardTypography: layout.cardTypography, managerSettings: layout.managerSettings || {}, weeklySchedules: weeklySchedules(layout), incompatibilities: incompatibilities(layout), bannedCreators: Array.isArray(layout.bannedCreators) ? layout.bannedCreators : [], posterMade: layout.posterMade || {} });
     const [agencies, battles] = results;
-    if (agencies.error || battles.error) throw new Error(agencies.error?.message || battles.error?.message);
-    const response = NextResponse.json({ agencies: ((agencies.data || []) as unknown as Record<string, unknown>[]).map((agency) => includePasswords ? { ...toAgency(agency), password: String(agency.password || "") } : toAgency(agency)), battles: ((battles.data || []) as unknown as Record<string, unknown>[]).map(toBattle), cardLayout: layout.cardLayout, cardTypography: layout.cardTypography, managerSettings: layout.managerSettings || {}, weeklySchedules: weeklySchedules(layout), incompatibilities: incompatibilities(layout), bannedCreators: Array.isArray(layout.bannedCreators) ? layout.bannedCreators : [], posterMade: layout.posterMade || {} });
+    if (agencies.error) throw new Error(agencies.error.message);
+    const response = NextResponse.json({ agencies: ((agencies.data || []) as unknown as Record<string, unknown>[]).map((agency) => includePasswords ? { ...toAgency(agency), password: String(agency.password || "") } : toAgency(agency)), battles: battles.map(toBattle), cardLayout: layout.cardLayout, cardTypography: layout.cardTypography, managerSettings: layout.managerSettings || {}, weeklySchedules: weeklySchedules(layout), incompatibilities: incompatibilities(layout), bannedCreators: Array.isArray(layout.bannedCreators) ? layout.bannedCreators : [], posterMade: layout.posterMade || {} });
     response.headers.set("Server-Timing", `supabase;dur=${Math.round(performance.now() - startedAt)}`);
     return response;
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "COULD NOT LOAD BATTLE NETWORK." }, { status: 500 }); }
