@@ -41,7 +41,7 @@ export async function getBattleNetworkInitialData(): Promise<BattleNetworkInitia
         submissionsSupabase.from("battle_network_agencies").select(AGENCY_COLUMNS).order("name"),
         // Generated load-test rows are deliberately hidden from the live
         // network while the database cleanup completes.
-        submissionsSupabase.from("battle_network_battles").select(BATTLE_COLUMNS).eq("week_start", currentWeekStart()).not("creator_username", "ilike", "test-%").order("created_at", { ascending: false }),
+        submissionsSupabase.from("battle_network_battles").select(BATTLE_COLUMNS).gte("week_start", recentWeekStart()).not("creator_username", "ilike", "test-%").order("created_at", { ascending: false }),
         submissionsSupabase.from("poster_templates").select("template_json").eq("name", "battle-network-settings").maybeSingle(),
       ]),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 30000)),

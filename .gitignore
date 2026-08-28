@@ -1,5 +1,8 @@
 node_modules/
 .next/
+.next-local/
+.next-local-clean/
+.next-local-fresh/
 .env.local
 .env*.local
 *.tsbuildinfo
