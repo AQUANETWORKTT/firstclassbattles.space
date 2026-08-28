@@ -78,28 +78,6 @@ async function battle(id: string) {
   if (error) throw new Error(error.message);
   return data ? toBattle(data) : null;
 }
-// A deleted opponent must never leave the remaining battle locked. This also
-// repairs older rows created before all deletion paths performed the unlink.
-async function repairDanglingOpponentLinks() {
-  const { data, error } = await submissionsSupabase
-    .from("battle_network_battles")
-    .select("id,opponent_battle_id,requested_time")
-    .not("opponent_battle_id", "is", null);
-  if (error) throw new Error(error.message);
-
-  const linkedRows = (data || []) as { id: string; opponent_battle_id: string | null; requested_time: string }[];
-  const existingIds = new Set(linkedRows.map((row) => row.id));
-  const brokenRows = linkedRows.filter((row) => row.opponent_battle_id && !existingIds.has(row.opponent_battle_id));
-  if (!brokenRows.length) return [];
-
-  const results = await Promise.all(brokenRows.map((row) => submissionsSupabase
-    .from("battle_network_battles")
-    .update({ opponent_battle_id: null, actual_time: row.requested_time, cancelled_at: null, cancelled_by: null })
-    .eq("id", row.id)));
-  const updateError = results.find((result) => result.error)?.error;
-  if (updateError) throw new Error(updateError.message);
-  return brokenRows.map((row) => row.id);
-}
 async function recordBattleAudit(action: string, current: Awaited<ReturnType<typeof battle>>, actorAgencyId?: string, opponentBattleId?: string) {
   if (!current) return;
   const { error } = await submissionsSupabase.from("battle_network_audit_log").insert({
@@ -128,15 +106,8 @@ export async function GET(request: Request) {
     const includePasswords = url.searchParams.get("settings") === "1";
     const history = url.searchParams.get("history") === "1";
     const weekStart = url.searchParams.get("week") || currentWeekStart();
-    let layout = await settings();
+    const layout = await settings();
     await ensureWeeklySchedules(layout);
-    const repairedBattleIds = await repairDanglingOpponentLinks();
-    if (repairedBattleIds.length) {
-      const posterMade = { ...((layout.posterMade && typeof layout.posterMade === "object") ? layout.posterMade as Record<string, boolean> : {}) };
-      repairedBattleIds.forEach((battleId) => delete posterMade[battleId]);
-      layout = { ...layout, posterMade };
-      await saveSettings(layout);
-    }
     const [agencies, battles] = await Promise.all([
       submissionsSupabase.from("battle_network_agencies").select(includePasswords ? `${AGENCY_COLUMNS},password` : AGENCY_COLUMNS).order("name"),
       submissionsSupabase.from("battle_network_battles").select(BATTLE_COLUMNS).gte("week_start", historyWeekStart(weekStart)).lte("week_start", endWeekStart(weekStart)).not("creator_username", "ilike", "test-%").order("created_at", { ascending: false }),
