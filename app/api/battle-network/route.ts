@@ -103,12 +103,20 @@ export async function GET(request: Request) {
     const includePasswords = url.searchParams.get("settings") === "1";
     const history = url.searchParams.get("history") === "1";
     const weekStart = url.searchParams.get("week") || currentWeekStart();
-    const layout = await settings();
-    await ensureWeeklySchedules(layout);
-    const [agencies, battles] = await Promise.all([
-      submissionsSupabase.from("battle_network_agencies").select(includePasswords ? `${AGENCY_COLUMNS},password` : AGENCY_COLUMNS).order("name"),
-      submissionsSupabase.from("battle_network_battles").select(BATTLE_COLUMNS).gte("week_start", historyWeekStart(weekStart)).lte("week_start", endWeekStart(weekStart)).not("creator_username", "ilike", "test-%").order("created_at", { ascending: false }),
+    const layoutPromise = Promise.race([
+      settings().catch(() => ({} as Record<string, unknown>)),
+      new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({}), 5000)),
     ]);
+    const results = await Promise.race([
+      Promise.all([
+        submissionsSupabase.from("battle_network_agencies").select(includePasswords ? `${AGENCY_COLUMNS},password` : AGENCY_COLUMNS).order("name"),
+        submissionsSupabase.from("battle_network_battles").select(BATTLE_COLUMNS).gte("week_start", historyWeekStart(weekStart)).lte("week_start", endWeekStart(weekStart)).not("creator_username", "ilike", "test-%").order("created_at", { ascending: false }),
+      ]),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ]);
+    const layout = await layoutPromise;
+    if (!results) return NextResponse.json({ agencies: [], battles: [], cardLayout: layout.cardLayout, cardTypography: layout.cardTypography, managerSettings: layout.managerSettings || {}, weeklySchedules: weeklySchedules(layout), incompatibilities: incompatibilities(layout), bannedCreators: Array.isArray(layout.bannedCreators) ? layout.bannedCreators : [], posterMade: layout.posterMade || {} });
+    const [agencies, battles] = results;
     if (agencies.error || battles.error) throw new Error(agencies.error?.message || battles.error?.message);
     const response = NextResponse.json({ agencies: ((agencies.data || []) as unknown as Record<string, unknown>[]).map((agency) => includePasswords ? { ...toAgency(agency), password: String(agency.password || "") } : toAgency(agency)), battles: ((battles.data || []) as unknown as Record<string, unknown>[]).map(toBattle), cardLayout: layout.cardLayout, cardTypography: layout.cardTypography, managerSettings: layout.managerSettings || {}, weeklySchedules: weeklySchedules(layout), incompatibilities: incompatibilities(layout), bannedCreators: Array.isArray(layout.bannedCreators) ? layout.bannedCreators : [], posterMade: layout.posterMade || {} });
     response.headers.set("Server-Timing", `supabase;dur=${Math.round(performance.now() - startedAt)}`);

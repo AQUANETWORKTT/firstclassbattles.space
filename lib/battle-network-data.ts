@@ -44,7 +44,9 @@ export async function getBattleNetworkInitialData(): Promise<BattleNetworkInitia
         submissionsSupabase.from("battle_network_battles").select(BATTLE_COLUMNS).gte("week_start", recentWeekStart()).not("creator_username", "ilike", "test-%").order("created_at", { ascending: false }),
         submissionsSupabase.from("poster_templates").select("template_json").eq("name", "battle-network-settings").maybeSingle(),
       ]),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 30000)),
+      // Never leave the whole Battle Network page on a permanent loading state
+      // when Supabase is slow or temporarily unavailable.
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
     ]);
   } catch {
     return { agencies: [], battles: [], error: "BATTLE NETWORK DATA COULD NOT LOAD. PLEASE REFRESH." };
