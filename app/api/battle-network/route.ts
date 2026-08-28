@@ -189,7 +189,11 @@ export async function POST(request: Request) {
       source = { ...source, opponentBattleId: undefined, actualTime: source.requestedTime };
     }
     if (["claim-battle", "external-claim", "add-manual-opponent"].includes(body.action)) {
-      if (!source || source.opponentBattleId) return NextResponse.json({ error: "THAT BATTLE IS NO LONGER AVAILABLE." }, { status: 409 });
+      if (!source) return NextResponse.json({ error: "THE SOURCE BATTLE WAS REMOVED. REFRESH THE SHEET AND TRY AGAIN." }, { status: 404 });
+      // Manual pairing is deliberately not an availability search. It always
+      // creates (or reconnects) the typed creator under the chosen agency.
+      // Only normal/external claims require an open source battle.
+      if (body.action !== "add-manual-opponent" && source.opponentBattleId) return NextResponse.json({ error: "THAT BATTLE IS NO LONGER AVAILABLE." }, { status: 409 });
       const requestedTime = isAnyTime(source.requestedTime) ? time(body.requestedTime) : source.requestedTime;
       if (isAnyTime(source.requestedTime) && !isFixedEveningTime(requestedTime)) return NextResponse.json({ error: "SELECT AN ACTUAL TIME BETWEEN 6 PM AND MIDNIGHT." }, { status: 409 });
       if (twoVTwoParticipants(source.manager)) return NextResponse.json({ error: "A 2V2 MUST BE CLAIMED WITH TWO OPPONENTS AND THEIR AGENCIES." }, { status: 409 });
