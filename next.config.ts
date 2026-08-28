@@ -1,6 +1,4 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  distDir: ".next-local-fresh",
-};
+const nextConfig: NextConfig = {};
 export default nextConfig;
