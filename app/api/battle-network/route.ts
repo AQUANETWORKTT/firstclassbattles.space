@@ -21,10 +21,12 @@ const timeMinutes = (value: string) => { const [hours, minutes] = value.split(":
 const isFixedEveningTime = (value: string) => !isAnyTime(value) && timeMinutes(value) >= 18 * 60 && timeMinutes(value) < 24 * 60;
 const isExactOrAnyTimeMatch = (first: string, second: string) => first === second ? !isAnyTime(first) : (isAnyTime(first) && isFixedEveningTime(second)) || (isAnyTime(second) && isFixedEveningTime(first));
 const resolvedMatchTime = (first: string, second: string) => isFixedEveningTime(first) ? first : isFixedEveningTime(second) ? second : first;
+const isOpenRange = (battle: ReturnType<typeof toBattle>) => !battle.opponentBattleId && isFixedEveningTime(battle.requestedTime) && isFixedEveningTime(battle.actualTime) && timeMinutes(battle.actualTime) > timeMinutes(battle.requestedTime);
+const rangeIncludes = (range: ReturnType<typeof toBattle>, point: string) => isFixedEveningTime(point) && timeMinutes(point) >= timeMinutes(range.requestedTime) && timeMinutes(point) <= timeMinutes(range.actualTime);
+const battlesMatch = (first: ReturnType<typeof toBattle>, second: ReturnType<typeof toBattle>) => isOpenRange(first) ? !isOpenRange(second) && rangeIncludes(first, second.requestedTime) : isOpenRange(second) ? rangeIncludes(second, first.requestedTime) : isExactOrAnyTimeMatch(first.requestedTime, second.requestedTime);
 const currentWeekStart = () => { const date = new Date(); date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return date.toISOString().slice(0, 10); };
 const recentWeekStart = () => { const date = new Date(); date.setDate(date.getDate() - 14); return date.toISOString().slice(0, 10); };
 const historyWeekStart = (weekStart: string) => { const date = new Date(`${weekStart}T12:00:00`); date.setDate(date.getDate() - 14); return date.toISOString().slice(0, 10); };
-const endWeekStart = (weekStart: string) => { const date = new Date(`${weekStart}T12:00:00`); date.setDate(date.getDate() + 7); return date.toISOString().slice(0, 10); };
 type WeeklySchedule = { id: string; agencyId: string; creatorUsername: string; manager: string; day: string; requestedTime: string; size: string; powerUps: string; active?: boolean };
 const weeklySchedules = (value: Record<string, unknown>) => Array.isArray(value.weeklySchedules) ? value.weeklySchedules as WeeklySchedule[] : [];
 const weekAfter = (weekStart: string) => { const date = new Date(`${weekStart}T12:00:00`); date.setDate(date.getDate() + 7); return date.toISOString().slice(0, 10); };
@@ -89,10 +91,11 @@ async function battle(id: string) {
   if (error) throw new Error(error.message);
   return data ? toBattle(data) : null;
 }
-async function battlesForWindow(weekStart: string) {
+async function battlesForWindow() {
   const battles: Record<string, unknown>[] = [];
-  const firstWeek = historyWeekStart(weekStart);
-  const lastWeek = endWeekStart(weekStart);
+  // Keep the two completed weeks before the current week, then retain every
+  // scheduled future week. On each Monday the oldest week falls away.
+  const firstWeek = historyWeekStart(currentWeekStart());
   let from = 0;
 
   while (true) {
@@ -100,7 +103,6 @@ async function battlesForWindow(weekStart: string) {
       .from("battle_network_battles")
       .select(BATTLE_COLUMNS)
       .gte("week_start", firstWeek)
-      .lte("week_start", lastWeek)
       .not("creator_username", "ilike", "test-%")
       .order("created_at", { ascending: false })
       .range(from, from + BATTLE_PAGE_SIZE - 1);
@@ -127,7 +129,6 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const includePasswords = url.searchParams.get("settings") === "1";
     const history = url.searchParams.get("history") === "1";
-    const weekStart = url.searchParams.get("week") || currentWeekStart();
     const layoutPromise = Promise.race([
       settings().catch(() => ({} as Record<string, unknown>)),
       new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({}), 5000)),
@@ -135,7 +136,7 @@ export async function GET(request: Request) {
     const results = await Promise.race([
       Promise.all([
         submissionsSupabase.from("battle_network_agencies").select(includePasswords ? `${AGENCY_COLUMNS},password` : AGENCY_COLUMNS).order("name"),
-        battlesForWindow(weekStart),
+        battlesForWindow(),
       ]),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
     ]);
@@ -197,11 +198,39 @@ export async function POST(request: Request) {
       if (updateError) throw new Error(updateError.message);
       return NextResponse.json({ ok: true });
     }
-    if (body.action === "claim-2v2") { const source = await battle(String(body.sourceId)); const sourceParticipants = source ? twoVTwoParticipants(source.manager) : null; const participants = twoVTwoParticipants(body.participants); if (!source || source.opponentBattleId || !sourceParticipants || !participants) return NextResponse.json({ error: "COMPLETE BOTH 2V2 OPPONENTS." }, { status: 409 }); const requestedTime = isAnyTime(source.requestedTime) ? time(body.requestedTime) : source.requestedTime; if (isAnyTime(source.requestedTime) && !isFixedEveningTime(requestedTime)) return NextResponse.json({ error: "SELECT AN ACTUAL TIME BETWEEN 6 PM AND MIDNIGHT." }, { status: 409 }); const row = payload({ id: crypto.randomUUID(), agencyId: key(body.agencyId) || participants[0].agencyId, weekStart: source.weekStart, day: source.day, creatorUsername: participants[0].username, manager: `${TWO_V_TWO_PREFIX}${JSON.stringify(participants)}`, size: source.size, powerUps: source.powerUps, requestedTime, actualTime: requestedTime }); const { data, error } = await submissionsSupabase.from("battle_network_battles").insert({ ...row, opponent_battle_id: source.id }).select(BATTLE_COLUMNS).single(); if (error) throw new Error(error.message); const { error: updateError } = await submissionsSupabase.from("battle_network_battles").update({ opponent_battle_id: data.id, requested_time: requestedTime, actual_time: requestedTime }).eq("id", source.id); if (updateError) throw new Error(updateError.message); return NextResponse.json({ battle: toBattle(data) }); }
+    if (body.action === "claim-2v2") { const source = await battle(String(body.sourceId)); const sourceParticipants = source ? twoVTwoParticipants(source.manager) : null; const participants = twoVTwoParticipants(body.participants); if (!source || source.opponentBattleId || !sourceParticipants || !participants) return NextResponse.json({ error: "COMPLETE BOTH 2V2 OPPONENTS." }, { status: 409 }); const flexibleTime = isAnyTime(source.requestedTime) || isOpenRange(source); const requestedTime = flexibleTime ? time(body.requestedTime) : source.requestedTime; if ((isAnyTime(source.requestedTime) && !isFixedEveningTime(requestedTime)) || (isOpenRange(source) && !rangeIncludes(source, requestedTime))) return NextResponse.json({ error: "SELECT AN ACTUAL TIME INSIDE THE AVAILABLE RANGE." }, { status: 409 }); const row = payload({ id: crypto.randomUUID(), agencyId: key(body.agencyId) || participants[0].agencyId, weekStart: source.weekStart, day: source.day, creatorUsername: participants[0].username, manager: `${TWO_V_TWO_PREFIX}${JSON.stringify(participants)}`, size: source.size, powerUps: source.powerUps, requestedTime, actualTime: requestedTime }); const { data, error } = await submissionsSupabase.from("battle_network_battles").insert({ ...row, opponent_battle_id: source.id }).select(BATTLE_COLUMNS).single(); if (error) throw new Error(error.message); const { error: updateError } = await submissionsSupabase.from("battle_network_battles").update({ opponent_battle_id: data.id, requested_time: requestedTime, actual_time: requestedTime }).eq("id", source.id); if (updateError) throw new Error(updateError.message); return NextResponse.json({ battle: toBattle(data) }); }
     if (body.action === "delete-battle") { const current = await battle(String(body.battleId)); if (!current || current.agencyId !== key(body.agencyId) || current.opponentBattleId) return NextResponse.json({ error: "BATTLE NOT FOUND OR LOCKED." }, { status: 409 }); const currentSettings = await settings(); const schedule = weeklySchedules(currentSettings).find((item) => item.active !== false && item.agencyId === current.agencyId && item.creatorUsername.toLowerCase() === current.creatorUsername.toLowerCase() && item.day === current.day && item.requestedTime === current.requestedTime); if (schedule) await saveSettings({ ...currentSettings, weeklyScheduleSkips: [...new Set([...(Array.isArray(currentSettings.weeklyScheduleSkips) ? currentSettings.weeklyScheduleSkips.map(String) : []), occurrenceKey(schedule.id, current.weekStart)])] }); const { error } = await submissionsSupabase.from("battle_network_battles").delete().eq("id", current.id); if (error) throw new Error(error.message); return NextResponse.json({ ok: true }); }
     if (body.action === "admin-delete-battle") { const current = await battle(String(body.battleId)); if (!current || current.opponentBattleId || current.cancelledAt) return NextResponse.json({ error: "ONLY OPEN BATTLES CAN BE DELETED." }, { status: 409 }); const { error } = await submissionsSupabase.from("battle_network_battles").delete().eq("id", current.id); if (error) throw new Error(error.message); return NextResponse.json({ ok: true }); }
     if (body.action === "cancel-match") { const current = await battle(String(body.battleId)); if (!current || current.agencyId !== key(body.agencyId) || !current.opponentBattleId) return NextResponse.json({ error: "MATCHED BATTLE NOT FOUND." }, { status: 404 }); const opponent = await battle(current.opponentBattleId); if (!opponent) return NextResponse.json({ error: "OPPONENT NOT FOUND." }, { status: 404 }); const { data: opponentAgency, error: agencyError } = await submissionsSupabase.from("battle_network_agencies").select("external_only").eq("id", opponent.agencyId).maybeSingle(); if (agencyError) throw new Error(agencyError.message); const resetHome = submissionsSupabase.from("battle_network_battles").update({ opponent_battle_id: null, actual_time: current.requestedTime, cancelled_at: null, cancelled_by: null }).eq("id", current.id); if (opponent.manager.startsWith("MANUAL:") || opponentAgency?.external_only) { const results = await Promise.all([resetHome, submissionsSupabase.from("battle_network_battles").delete().eq("id", opponent.id)]); const error = results.find((result) => result.error)?.error; if (error) throw new Error(error.message); await clearPosterMade(current.id, opponent.id); return NextResponse.json({ ok: true, opponentDeleted: true }); } const opponentUpdate = submissionsSupabase.from("battle_network_battles").update({ opponent_battle_id: null, actual_time: opponent.requestedTime, cancelled_at: null, cancelled_by: null }).eq("id", opponent.id); const results = await Promise.all([resetHome, opponentUpdate]); const error = results.find((result) => result.error)?.error; if (error) throw new Error(error.message); await clearPosterMade(current.id, opponent.id); return NextResponse.json({ ok: true }); }
-    if (body.action === "match") { const [first, second, currentSettings] = await Promise.all([battle(String(body.firstId)), battle(String(body.secondId)), settings()]); const close = Boolean(body.close); const activeAgencyId = key(body.agencyId); const difference = first && second ? Math.abs(timeMinutes(first.requestedTime) - timeMinutes(second.requestedTime)) : 0; if (!first || !second || first.opponentBattleId || second.opponentBattleId) return NextResponse.json({ error: "THAT BATTLE IS NO LONGER AVAILABLE." }, { status: 409 }); if (!activeAgencyId || !battleBelongsToAgency(first, activeAgencyId)) return NextResponse.json({ error: "YOU CAN ONLY MATCH FROM YOUR OWN AGENCY BATTLE." }, { status: 403 }); if (Boolean(twoVTwoParticipants(first.manager)) !== Boolean(twoVTwoParticipants(second.manager))) return NextResponse.json({ error: "2V2 BATTLES CAN ONLY BE MATCHED WITH ANOTHER COMPLETE 2V2 PAIR." }, { status: 409 }); if (creatorKey(first.creatorUsername) === creatorKey(second.creatorUsername)) return NextResponse.json({ error: "A CREATOR CANNOT BE MATCHED AGAINST THEMSELVES." }, { status: 409 }); if (incompatible(incompatibilities(currentSettings), first.creatorUsername, second.creatorUsername)) return NextResponse.json({ error: "⚠ INCOMPATIBLE CREATORS — THIS BATTLE CANNOT BE MATCHED." }, { status: 409 }); if (first.weekStart !== second.weekStart || first.day !== second.day || first.size !== second.size || first.powerUps !== second.powerUps || (!close && !isExactOrAnyTimeMatch(first.requestedTime, second.requestedTime)) || (close && (!isFixedEveningTime(first.requestedTime) || !isFixedEveningTime(second.requestedTime) || difference === 0 || difference > 15))) return NextResponse.json({ error: "BATTLES MUST MATCH ON THE SAME DATE, TIME, SIZE AND POWER-UP RULES." }, { status: 409 }); const actualTime = close ? second.requestedTime : resolvedMatchTime(first.requestedTime, second.requestedTime); const updates = [{ id: first.id, opponent_battle_id: second.id, requested_time: actualTime, actual_time: actualTime }, { id: second.id, opponent_battle_id: first.id, requested_time: actualTime, actual_time: actualTime }]; const results = await Promise.all(updates.map(({ id, ...update }) => submissionsSupabase.from("battle_network_battles").update(update).eq("id", id))); const error = results.find((result) => result.error)?.error; if (error) throw new Error(error.message); return NextResponse.json({ ok: true }); }
+    if (body.action === "match") { const [first, second, currentSettings] = await Promise.all([battle(String(body.firstId)), battle(String(body.secondId)), settings()]); const close = Boolean(body.close); const activeAgencyId = key(body.agencyId); const difference = first && second ? Math.abs(timeMinutes(first.requestedTime) - timeMinutes(second.requestedTime)) : 0; if (!first || !second || first.opponentBattleId || second.opponentBattleId) return NextResponse.json({ error: "THAT BATTLE IS NO LONGER AVAILABLE." }, { status: 409 }); if (!activeAgencyId || !battleBelongsToAgency(first, activeAgencyId)) return NextResponse.json({ error: "YOU CAN ONLY MATCH FROM YOUR OWN AGENCY BATTLE." }, { status: 403 }); if (Boolean(twoVTwoParticipants(first.manager)) !== Boolean(twoVTwoParticipants(second.manager))) return NextResponse.json({ error: "2V2 BATTLES CAN ONLY BE MATCHED WITH ANOTHER COMPLETE 2V2 PAIR." }, { status: 409 }); if (creatorKey(first.creatorUsername) === creatorKey(second.creatorUsername)) return NextResponse.json({ error: "A CREATOR CANNOT BE MATCHED AGAINST THEMSELVES." }, { status: 409 }); if (incompatible(incompatibilities(currentSettings), first.creatorUsername, second.creatorUsername)) return NextResponse.json({ error: "⚠ INCOMPATIBLE CREATORS — THIS BATTLE CANNOT BE MATCHED." }, { status: 409 }); if (first.weekStart !== second.weekStart || first.day !== second.day || first.size !== second.size || first.powerUps !== second.powerUps || (!close && !battlesMatch(first, second)) || (close && (isOpenRange(first) || isOpenRange(second) || !isFixedEveningTime(first.requestedTime) || !isFixedEveningTime(second.requestedTime) || difference === 0 || difference > 15))) return NextResponse.json({ error: "BATTLES MUST MATCH ON THE SAME DATE, TIME, SIZE AND POWER-UP RULES." }, { status: 409 }); const actualTime = close ? second.requestedTime : isOpenRange(first) ? second.requestedTime : isOpenRange(second) ? first.requestedTime : resolvedMatchTime(first.requestedTime, second.requestedTime); const updates = [
+  {
+    id: first.id,
+    opponent_battle_id: second.id,
+    actual_time: actualTime,
+  },
+  {
+    id: second.id,
+    opponent_battle_id: first.id,
+    actual_time: actualTime,
+  },
+];
+
+const results = await Promise.all(
+  updates.map(({ id, ...update }) =>
+    submissionsSupabase
+      .from("battle_network_battles")
+      .update(update)
+      .eq("id", id)
+  )
+);
+
+const error = results.find((result) => result.error)?.error;
+
+if (error) {
+  throw new Error(error.message);
+}
+
+return NextResponse.json({ ok: true }); }
     let source = await battle(String(body.sourceId));
     // Manual pairing deliberately replaces any previous link. The typed
     // creator and selected agency are the new opponent for this battle.
@@ -219,8 +248,9 @@ export async function POST(request: Request) {
       // creates (or reconnects) the typed creator under the chosen agency.
       // Only normal/external claims require an open source battle.
       if (body.action !== "add-manual-opponent" && source.opponentBattleId) return NextResponse.json({ error: "THAT BATTLE IS NO LONGER AVAILABLE." }, { status: 409 });
-      const requestedTime = isAnyTime(source.requestedTime) ? time(body.requestedTime) : source.requestedTime;
-      if (isAnyTime(source.requestedTime) && !isFixedEveningTime(requestedTime)) return NextResponse.json({ error: "SELECT AN ACTUAL TIME BETWEEN 6 PM AND MIDNIGHT." }, { status: 409 });
+      const flexibleTime = isAnyTime(source.requestedTime) || isOpenRange(source);
+      const requestedTime = flexibleTime ? time(body.requestedTime) : source.requestedTime;
+      if ((isAnyTime(source.requestedTime) && !isFixedEveningTime(requestedTime)) || (isOpenRange(source) && !rangeIncludes(source, requestedTime))) return NextResponse.json({ error: "SELECT AN ACTUAL TIME INSIDE THE AVAILABLE RANGE." }, { status: 409 });
       if (twoVTwoParticipants(source.manager)) return NextResponse.json({ error: "A 2V2 MUST BE CLAIMED WITH TWO OPPONENTS AND THEIR AGENCIES." }, { status: 409 });
       let agencyId = body.action === "claim-battle" ? key(body.agencyId) : key(body.opponentAgencyId || String(body.creatorUsername || "").split("::")[0]);
       const username = body.action === "external-claim" ? clean(String(body.creatorUsername || "").split("::").pop()) : clean(body.creatorUsername);

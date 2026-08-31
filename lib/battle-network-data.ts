@@ -21,10 +21,14 @@ export function toAgency(row: Record<string, unknown>) {
 }
 
 export function toBattle(row: Record<string, unknown>) {
+  const requestedTime = time(row.requested_time as string);
+  const actualTime = time(row.actual_time as string);
+  const hasOpponent = Boolean(row.opponent_battle_id);
+  const isOpenRange = !hasOpponent && requestedTime !== "ANY TIME" && actualTime !== "ANY TIME" && actualTime > requestedTime;
   return {
     id: String(row.id), agencyId: String(row.agency_id), weekStart: String(row.week_start || ""), day: String(row.day),
     creatorUsername: String(row.creator_username), manager: String(row.manager), size: String(row.size), powerUps: String(row.power_ups) === "NPU" ? "NPU" : "POWER-UPS ALLOWED",
-    requestedTime: time(row.requested_time as string), actualTime: time(row.actual_time as string), opponentBattleId: row.opponent_battle_id ? String(row.opponent_battle_id) : undefined, createdAt: String(row.created_at || ""), cancelledAt: row.cancelled_at ? String(row.cancelled_at) : undefined, cancelledBy: row.cancelled_by ? String(row.cancelled_by) : undefined,
+    requestedTime, actualTime, rangeEnd: isOpenRange ? actualTime : undefined, opponentBattleId: hasOpponent ? String(row.opponent_battle_id) : undefined, createdAt: String(row.created_at || ""), cancelledAt: row.cancelled_at ? String(row.cancelled_at) : undefined, cancelledBy: row.cancelled_by ? String(row.cancelled_by) : undefined,
   };
 }
 
