@@ -657,6 +657,21 @@ function TwoVTwoBattleModal({ agency, battles = [], weekStart, draft, setDraft, 
 function BattleModal({ agency, battles = [], weekStart, draft, setDraft, editing, editingAway, creating, onClose, onSubmit, managerOptions = [] }: any) {
   const duplicate = battles.some((battle: Battle) => battle.id !== editing?.id && battle.agencyId === agency.id && battle.weekStart === weekStart && battle.day === draft.day && battle.requestedTime === draft.requestedTime && battle.creatorUsername.trim().toLowerCase() === draft.creatorUsername.trim().replace(/^@/, "").toLowerCase());
   const [twoVTwo, setTwoVTwo] = useState(false);
+  const typedUsername = useRef(draft.creatorUsername);
+  useEffect(() => { typedUsername.current = draft.creatorUsername; }, [editing?.id]);
+  useEffect(() => {
+    const input = document.querySelector<HTMLInputElement>('.fixed.inset-0.z-30 input[placeholder="USERNAME"]');
+    if (!input) return;
+    const typeWithoutRefreshingWorksheet = (event: Event) => { typedUsername.current = input.value; event.stopPropagation(); };
+    const commitUsername = () => setDraft((current: Draft) => current.creatorUsername === typedUsername.current ? current : { ...current, creatorUsername: typedUsername.current });
+    input.addEventListener("input", typeWithoutRefreshingWorksheet);
+    input.addEventListener("blur", commitUsername);
+    return () => { input.removeEventListener("input", typeWithoutRefreshingWorksheet); input.removeEventListener("blur", commitUsername); };
+  }, [setDraft]);
+  useLayoutEffect(() => {
+    const input = document.querySelector<HTMLInputElement>('.fixed.inset-0.z-30 input[placeholder="USERNAME"]');
+    if (input && input.value !== typedUsername.current) input.value = typedUsername.current;
+  });
   useEffect(() => {
     if (editing || twoVTwo) return;
     const form = document.querySelector<HTMLFormElement>(".fixed.inset-0.z-30 form");
