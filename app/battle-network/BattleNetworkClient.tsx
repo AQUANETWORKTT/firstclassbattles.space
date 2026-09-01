@@ -662,11 +662,11 @@ function BattleModal({ agency, battles = [], weekStart, draft, setDraft, editing
   useEffect(() => {
     const input = document.querySelector<HTMLInputElement>('.fixed.inset-0.z-30 input[placeholder="USERNAME"]');
     if (!input) return;
-    const typeWithoutRefreshingWorksheet = (event: Event) => { typedUsername.current = input.value; event.stopPropagation(); };
+    const typeWithoutRefreshingWorksheet = (event: Event) => { if (event.target !== input) return; typedUsername.current = input.value; event.stopImmediatePropagation(); };
     const commitUsername = () => setDraft((current: Draft) => current.creatorUsername === typedUsername.current ? current : { ...current, creatorUsername: typedUsername.current });
-    input.addEventListener("input", typeWithoutRefreshingWorksheet);
+    window.addEventListener("input", typeWithoutRefreshingWorksheet, true);
     input.addEventListener("blur", commitUsername);
-    return () => { input.removeEventListener("input", typeWithoutRefreshingWorksheet); input.removeEventListener("blur", commitUsername); };
+    return () => { window.removeEventListener("input", typeWithoutRefreshingWorksheet, true); input.removeEventListener("blur", commitUsername); };
   }, [setDraft]);
   useLayoutEffect(() => {
     const input = document.querySelector<HTMLInputElement>('.fixed.inset-0.z-30 input[placeholder="USERNAME"]');
