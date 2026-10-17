@@ -52,7 +52,8 @@ async function ensureWeeklySchedules(current: Record<string, unknown>) {
 }
 async function reconcileWeeklySchedules(current: Record<string, unknown>) {
   const schedules = weeklySchedules(current).filter((schedule) => schedule.active !== false);
-  const weeks = [currentWeekStart(), weekAfter(currentWeekStart())];
+  const firstWeek = currentWeekStart();
+  const weeks = [firstWeek, weekAfter(firstWeek), weekAfter(weekAfter(firstWeek)), weekAfter(weekAfter(weekAfter(firstWeek)))];
   for (const schedule of schedules) for (const weekStart of weeks) {
     const { data: existing, error: existingError } = await submissionsSupabase.from("battle_network_battles").select("id,creator_username").eq("agency_id", schedule.agencyId).eq("week_start", weekStart).eq("day", schedule.day).eq("requested_time", schedule.requestedTime);
     if (existingError) throw new Error(existingError.message);
