@@ -145,8 +145,13 @@ export async function GET(request: Request) {
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
     ]);
     const layout = await layoutPromise;
+    // Weekly schedule definitions persist independently of their battle rows.
+    // Reconcile them whenever the network is opened so the current and next
+    // week are always materialised without removing the saved schedules.
+    await ensureWeeklySchedules(layout);
     if (!results) return NextResponse.json({ agencies: [], battles: [], cardLayout: layout.cardLayout, cardTypography: layout.cardTypography, managerSettings: layout.managerSettings || {}, weeklySchedules: weeklySchedules(layout), incompatibilities: incompatibilities(layout), bannedCreators: Array.isArray(layout.bannedCreators) ? layout.bannedCreators : [], visibilityBlocks: visibilityBlocks(layout.visibilityBlocks), posterMade: layout.posterMade || {} });
-    const [agencies, battles] = results;
+    const [agencies] = results;
+    const battles = await battlesForWindow();
     if (agencies.error) throw new Error(agencies.error.message);
     const response = NextResponse.json({ agencies: ((agencies.data || []) as unknown as Record<string, unknown>[]).map((agency) => includePasswords ? { ...toAgency(agency), password: String(agency.password || "") } : toAgency(agency)), battles: battles.map(toBattle), cardLayout: layout.cardLayout, cardTypography: layout.cardTypography, managerSettings: layout.managerSettings || {}, weeklySchedules: weeklySchedules(layout), incompatibilities: incompatibilities(layout), bannedCreators: Array.isArray(layout.bannedCreators) ? layout.bannedCreators : [], visibilityBlocks: visibilityBlocks(layout.visibilityBlocks), posterMade: layout.posterMade || {} });
     response.headers.set("Server-Timing", `supabase;dur=${Math.round(performance.now() - startedAt)}`);
