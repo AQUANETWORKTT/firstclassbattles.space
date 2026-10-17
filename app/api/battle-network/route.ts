@@ -15,6 +15,7 @@ const ANY_TIME_STORAGE = "00:00";
 // Supabase returns a maximum of 1,000 rows per request. The Battle Network
 // needs the complete selected date range, so fetch every page of results.
 const BATTLE_PAGE_SIZE = 1000;
+let weeklyReconcilePromise: Promise<void> | null = null;
 type VisibilityBlock = { viewerAgencyId: string; targetAgencyId: string };
 const visibilityBlocks = (value: unknown): VisibilityBlock[] => Array.isArray(value) ? value.map((item) => ({ viewerAgencyId: key(item?.viewerAgencyId), targetAgencyId: key(item?.targetAgencyId) })).filter((item) => item.viewerAgencyId && item.targetAgencyId && item.viewerAgencyId !== item.targetAgencyId) : [];
 const isVisibilityBlocked = (blocks: VisibilityBlock[], viewerAgencyId: string, targetAgencyId: string) => blocks.some((block) => block.viewerAgencyId === viewerAgencyId && block.targetAgencyId === targetAgencyId);
@@ -35,12 +36,24 @@ type WeeklySchedule = { id: string; agencyId: string; creatorUsername: string; m
 const weeklySchedules = (value: Record<string, unknown>) => Array.isArray(value.weeklySchedules) ? value.weeklySchedules as WeeklySchedule[] : [];
 const weekAfter = (weekStart: string) => { const date = new Date(`${weekStart}T12:00:00`); date.setDate(date.getDate() + 7); return date.toISOString().slice(0, 10); };
 const occurrenceKey = (scheduleId: string, weekStart: string) => `${scheduleId}:${weekStart}`;
+function dedupeVisibleBattles(rows: Record<string, unknown>[]) {
+  const chosen = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const key = [row.agency_id, row.week_start, row.day, creatorKey(row.creator_username), row.requested_time].join("|");
+    const previous = chosen.get(key);
+    if (!previous || (!previous.opponent_battle_id && row.opponent_battle_id)) chosen.set(key, row);
+  }
+  return [...chosen.values()];
+}
 async function ensureWeeklySchedules(current: Record<string, unknown>) {
+  if (weeklyReconcilePromise) return weeklyReconcilePromise;
+  weeklyReconcilePromise = reconcileWeeklySchedules(current).finally(() => { weeklyReconcilePromise = null; });
+  return weeklyReconcilePromise;
+}
+async function reconcileWeeklySchedules(current: Record<string, unknown>) {
   const schedules = weeklySchedules(current).filter((schedule) => schedule.active !== false);
-  const skips = new Set(Array.isArray(current.weeklyScheduleSkips) ? current.weeklyScheduleSkips.map(String) : []);
   const weeks = [currentWeekStart(), weekAfter(currentWeekStart())];
   for (const schedule of schedules) for (const weekStart of weeks) {
-    if (skips.has(occurrenceKey(schedule.id, weekStart))) continue;
     const { data: existing, error: existingError } = await submissionsSupabase.from("battle_network_battles").select("id,creator_username").eq("agency_id", schedule.agencyId).eq("week_start", weekStart).eq("day", schedule.day).eq("requested_time", schedule.requestedTime);
     if (existingError) throw new Error(existingError.message);
     if (existing?.some((row) => creatorKey(row.creator_username) === creatorKey(schedule.creatorUsername))) continue;
@@ -113,7 +126,7 @@ async function battlesForWindow() {
     if (error) throw new Error(error.message);
     const page = (data || []) as unknown as Record<string, unknown>[];
     battles.push(...page);
-    if (page.length < BATTLE_PAGE_SIZE) return battles;
+    if (page.length < BATTLE_PAGE_SIZE) return dedupeVisibleBattles(battles);
     from += BATTLE_PAGE_SIZE;
   }
 }
