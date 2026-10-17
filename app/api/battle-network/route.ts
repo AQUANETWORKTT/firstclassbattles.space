@@ -148,7 +148,7 @@ export async function GET(request: Request) {
     const history = url.searchParams.get("history") === "1";
     const layoutPromise = Promise.race([
       settings().catch(() => ({} as Record<string, unknown>)),
-      new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({}), 5000)),
+      new Promise<Record<string, unknown>>((resolve) => setTimeout(() => resolve({}), 15000)),
     ]);
     const results = await Promise.race([
       Promise.all([
